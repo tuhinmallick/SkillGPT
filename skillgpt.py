@@ -76,8 +76,6 @@ class SkillGPT:
             if i == 0:
                 out = model(
                     torch.as_tensor([input_ids]).cuda(), use_cache=True)
-                logits = out.logits
-                past_key_values = out.past_key_values
             else:
                 attention_mask = torch.ones(
                     1, past_key_values[0][0].shape[-2] + 1, device="cuda")
@@ -85,9 +83,8 @@ class SkillGPT:
                             use_cache=True,
                             attention_mask=attention_mask,
                             past_key_values=past_key_values)
-                logits = out.logits
-                past_key_values = out.past_key_values
-
+            past_key_values = out.past_key_values
+            logits = out.logits
             last_token_logits = logits[0][-1]
             if temperature < 1e-4:
                 token = int(torch.argmax(last_token_logits))
@@ -97,11 +94,7 @@ class SkillGPT:
 
             output_ids.append(token)
 
-            if token == tokenizer.eos_token_id:
-                stopped = True
-            else:
-                stopped = False
-
+            stopped = token == tokenizer.eos_token_id
             if i % STREAM_INTERVAL == 0 or i == max_new_tokens - 1 or stopped:
                 output = tokenizer.decode(output_ids, skip_special_tokens=True)
                 pos = output.rfind(stop_str, l_prompt)
@@ -122,16 +115,22 @@ class SkillGPT:
         
     @torch.inference_mode()
     def get_embedding(self, prompt):
-        tokenizer, model = self.tokenizer, self.model        
+        tokenizer, model = self.tokenizer, self.model
         inputs = tokenizer(prompt, padding=True, truncation=True, return_tensors="pt")
         input_ids = inputs.input_ids
         attention_mask = inputs.attention_mask
         n_tokens = attention_mask.sum(1, keepdim=True)
         last_layer_hidden_state = model(input_ids.cuda(), output_hidden_states=True, use_cache=True)["hidden_states"][-1].cpu()
-        
-        res =  list(((attention_mask.unsqueeze(-1) * last_layer_hidden_state).sum(1) / n_tokens).numpy().ravel().astype(float))        
-        # del input_ids, attention_mask, last_layer_hidden_state, inputs
-        return res
+
+        return list(
+            (
+                (attention_mask.unsqueeze(-1) * last_layer_hidden_state).sum(1)
+                / n_tokens
+            )
+            .numpy()
+            .ravel()
+            .astype(float)
+        )
             
     
     def embed_text(self, params):
@@ -160,8 +159,7 @@ class SkillGPT:
         text_emb, esco_index, num_relevant = params["embedding"], params["esco_index"], params.get("num_relevant", 5)
         redis_host, redis_port = params.get("redis_host", "localhost"), params.get("redis_port", "6379")
         memory = RedisMemory(redis_host, redis_port)
-        res = memory.get_relevant(text_emb, esco_index, num_relevant)
-        return res
+        return memory.get_relevant(text_emb, esco_index, num_relevant)
         
         
     def label_text_gate(self, params):
@@ -178,8 +176,7 @@ class SkillGPT:
 
     def generate_stream_gate(self, params):
         try:
-            for x in self.generate_stream(params):
-                yield x
+            yield from self.generate_stream(params)
         except torch.cuda.OutOfMemoryError:
             ret = {
                 "text": server_error_msg,
@@ -189,8 +186,7 @@ class SkillGPT:
             
     def embed_text_gate(self, params):
         try:
-            for x in self.embed_text(params):
-                yield x
+            yield from self.embed_text(params)
         except torch.cuda.OutOfMemoryError:
             ret = {
                 "text": server_error_msg,

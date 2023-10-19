@@ -60,8 +60,12 @@ def summrize(text, document_type):
         "temperature": 0.7,
         "stop": sep,
     }
-    response = requests.post(worker_addr + "/generate_stream", headers=headers,
-            json=pload, stream=False)
+    response = requests.post(
+        f"{worker_addr}/generate_stream",
+        headers=headers,
+        json=pload,
+        stream=False,
+    )
 
     for chunk in response.iter_lines(chunk_size=8192, decode_unicode=False, delimiter=b"\0"):
         if chunk:
@@ -89,8 +93,9 @@ def label(esco_index, text):
         "redis_host": REDIS_HOST,
         "num_relevant": 10,
     }
-    response = requests.post(worker_addr + "/label_text", headers=headers,
-            json=pload, stream=False)
+    response = requests.post(
+        f"{worker_addr}/label_text", headers=headers, json=pload, stream=False
+    )
     return format_esco_concepts(json.loads(response.content)["labels"], esco_index)
 
 def add_text(state, text, document_type, request: gr.Request):

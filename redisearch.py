@@ -30,10 +30,10 @@ SCHEMA = [
 def chunk(it, size):
     it = iter(it)
     while True:
-        p = dict(itertools.islice(it, size))
-        if not p:
+        if p := dict(itertools.islice(it, size)):
+            yield p
+        else:
             break
-        yield p
 
 class RedisMemory:
     def __init__(self, redis_host, redis_port, redis_password=None, wipe_redis_on_start=False):        
